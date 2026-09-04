@@ -1,0 +1,72 @@
+name: Build Android APKs from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "geogebra-clean-baseline.zip"
+      - ".github/workflows/build-from-zip.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify ZIP exists
+        run: |
+          test -f geogebra-clean-baseline.zip
+          unzip -l geogebra-clean-baseline.zip | head -50
+
+      - name: Extract project
+        run: |
+          rm -rf build-src
+          mkdir -p build-src
+          unzip -q geogebra-clean-baseline.zip -d build-src
+          test -f build-src/geogebra-clean-baseline/settings.gradle.kts
+          test -f build-src/geogebra-clean-baseline/app/build.gradle.kts
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build 2D and 3D APKs
+        working-directory: build-src/geogebra-clean-baseline
+        run: |
+          gradle --no-daemon             :app:assembleGraphingDebug             :app:assembleThreeDDebug
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+
+          cp             build-src/geogebra-clean-baseline/app/build/outputs/apk/graphing/debug/app-graphing-debug.apk             dist/GeoGebra-Graphing-Demo.apk
+
+          cp             build-src/geogebra-clean-baseline/app/build/outputs/apk/threeD/debug/app-threeD-debug.apk             dist/GeoGebra-3D-Demo.apk
+
+          ls -lh dist
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geogebra-demo-apks
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
